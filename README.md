@@ -1,7 +1,8 @@
 # NNEF energy function — collaborator test kit
 
-Score your own PDB structure(s) with a neural-network protein energy
-function, in one command, no training data or cluster access needed.
+Score your own PDB structure(s), or run molecular dynamics on them, with a
+neural-network protein energy function — one command, no training data or
+cluster access needed.
 
 This is a minimal, self-contained slice of an ongoing FYP project built on
 top of Yang, Xiong & Zonta's NNEF (2022) — see [Background](#background)
@@ -71,6 +72,41 @@ A working checkpoint should show **energy and quality label negatively
 correlated** (Pearson r around −0.8 to −0.9 is what these checkpoints get on
 the CASP14 T1026 benchmark, energy vs. GDT_TS across 512 decoys).
 
+## 3b. Run MD on your own structure
+
+Starts the chain **at your input structure** and runs Langevin dynamics
+under the checkpoint's energy function — a stable/well-shaped landscape
+holds RMSD-to-start roughly flat; a poorly-shaped one drifts away.
+
+```bash
+python nnef/scripts/run_md_for_collaborator.py \
+    --checkpoint yang \
+    --input your_protein.pdb \
+    --out_dir md_out/
+```
+
+Writes `<name>_energy_rmsd.csv` (step, energy, RMSD-to-start, radius of
+gyration) and `<name>_trajectory.pdb` (a multi-MODEL PDB you can open in
+PyMOL/ChimeraX or animate) under `md_out/`.
+
+**Runtime** (measured on CPU, scales with chain length not much with step
+count, ~14 steps/s for an 80-residue chain): the default `--steps 2000` is a
+~2.5 min sanity check; `--steps 20000` ~24 min; `--steps 100000` ~2 hours. A
+GPU (`--device cuda`) is much faster — this project's own 500,000-step runs
+were all on GPU. Start with the default, raise `--steps` for a more decisive
+answer:
+
+```bash
+python nnef/scripts/run_md_for_collaborator.py \
+    --checkpoint ribbon --input your_protein.pdb --out_dir md_out/ \
+    --steps 100000 --log_interval 200
+```
+
+`--lr`/`--t_noise` (step size / noise, both default `3e-4`) are this
+project's own validated "landscape probing" pairing — don't raise them
+casually, larger values make the run sampler-dominated (drift from thermal
+noise, not the energy landscape) rather than a meaningful test of the model.
+
 ## 4. Which checkpoint?
 
 | `--checkpoint` | What it is | Notes |
@@ -92,8 +128,9 @@ settings — plausibly because each output distribution implies a different
 "effective temperature" for the energy landscape, and everything was run at
 one fixed sampler setting rather than recalibrating it per checkpoint. Decoy
 correlation (what this script computes) was **not** noticeably different
-across the ablation, so this caveat mainly matters if you go on to run
-MD/sampling with these checkpoints — not for plain structure scoring.
+across the ablation, so this caveat mainly matters if you run
+[MD](#3b-run-md-on-your-own-structure) with these checkpoints, not for plain
+structure scoring.
 
 ## 4b. Input format details
 
@@ -110,13 +147,14 @@ MD/sampling with these checkpoints — not for plain structure scoring.
 ## 5. The `esm` checkpoint (not yet usable here)
 
 The `esm` checkpoint needs a precomputed per-residue ESM-C 600M embedding for
-your sequence. `score_for_collaborator.py` does not compute this on the fly,
-and **deliberately refuses to run `--checkpoint esm`** rather than silently
-scoring with the ESM branch switched off (which would produce a
-plausible-looking but wrong number — the checkpoint's ESM weights would
-contribute nothing to the energy).
+your sequence. Neither `score_for_collaborator.py` nor
+`run_md_for_collaborator.py` computes this on the fly, and **both
+deliberately refuse to run `--checkpoint esm`** rather than silently running
+with the ESM branch switched off (which would produce a plausible-looking
+but wrong number — the checkpoint's ESM weights would contribute nothing to
+the energy).
 
-If you want to test this checkpoint, get in touch — we'll extend the script
+If you want to test this checkpoint, get in touch — we'll extend the scripts
 rather than have you hand-build the CLI call (the ESM flags are easy to get
 subtly wrong).
 
